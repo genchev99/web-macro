@@ -28,11 +28,50 @@ const parseCommand = async (page, command) => {
 
 const commands = {
   click,
+  type,
+  screenshot,
+  goto,
+  pdf,
+  textContent,
+  attribute,
+  href,
 };
 
 const click = async (page, commandArguments) =>
   await page.click(commandArguments[0]);
 
+const type = async (page, commandArguments) =>
+  await page.type(commandArguments[0], commandArguments[1]);
+
+const screenshot = async (page, commandArguments) =>
+  await page.screenshot({fullPage: true, encode: 'base64'});
+
+const goto = async (page, commandArguments) =>
+  await page.goto(commandArguments[0]);
+
+const pdf = async (page, commandArguments) =>
+  await page.pdf();
+
+const textContent = async (page, commandArguments) =>
+  await page.evaluate((selector) =>
+    document.querySelector(selector)
+    && document.querySelector(selector).textContent
+    && document.querySelector(selector).textContent.trim()
+    , commandArguments[0]);
+
+const attribute = async (page, commandArguments) =>
+  await page.evaluate((selector, attribute) =>
+    document.querySelector(selector)
+    && document.querySelector(selector).getAttribute(attribute)
+    && document.querySelector(selector).getAttribute(attribute).trim()
+    , commandArguments[0], commandArguments[1]);
+
+const href = async (page, commandArguments) =>
+  await page.evaluate((selector) =>
+    document.querySelector(selector)
+    && document.querySelector(selector).href
+    && document.querySelector(selector).href.trim()
+    , commandArguments[0]);
 
 
 exports.handler = async (event) => {
