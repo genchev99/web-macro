@@ -1,0 +1,27 @@
+- spider
+  - on event
+  - parse commands
+    - map command
+    - exec command
+    - commands
+      - goto: [url]
+      - screenshot: [fullPage, css selector, (none for viewport)]
+      - type: selector text
+      - click: selector times
+      - pdf
+      - text: selector - gets the textContent of an html element
+      - attribute: selector attribute
+      - href: selector
+  - save result to S3
+- web app
+  - login
+  - register
+  - list scripts
+    - add new script
+      - commands
+      - execute on event [time, request]
+    - delete script
+    - edit script
+    - execute script
+    
+    
