@@ -1,14 +1,7 @@
-const middy = require("middy");
 const chromium = require("chrome-aws-lambda");
 const puppeteer = require("puppeteer-core");
-const {
-  cors,
-  doNotWaitForEmptyEventLoop,
-  httpHeaderNormalizer,
-  httpErrorHandler
-} = require("middy/middlewares");
 
-const handler = async (event) => {
+exports.handler = async (event) => {
   const executablePath = event.isOffline
     ? "./node_modules/puppeteer/.local-chromium/mac-674921/chrome-mac/Chromium.app/Contents/MacOS/Chromium"
     : await chromium.executablePath;
@@ -36,8 +29,3 @@ const handler = async (event) => {
   };
 };
 
-export const generate = middy(handler)
-  .use(httpHeaderNormalizer())
-  .use(cors())
-  .use(doNotWaitForEmptyEventLoop())
-  .use(httpErrorHandler());
