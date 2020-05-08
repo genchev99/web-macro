@@ -8,6 +8,7 @@ from troposphere.ec2 import SecurityGroup
 from troposphere.iam import Role, Policy
 from troposphere.s3 import Bucket, NotificationConfiguration, TopicConfigurations
 from troposphere.sns import Topic, Subscription, TopicPolicy
+from troposphere.sqs import Queue, RedrivePolicy, QueuePolicy
 
 stage = 'pilot'
 template = Template()
@@ -107,22 +108,41 @@ spider_lambda_role = template.add_resource(Role(
 #     Value=Join(", ", GetAtt(AllSecurityGroups, "Value")),
 # ))
 
+spider_tasks_queue_dlq_name = f'{stage}-spider-tasks-dlq'
+spider_tasks_queue_dlq = template.add_resource(
+    Queue(
+        "SpiderTasksDLQ",
+        QueueName=spider_tasks_queue_dlq_name,
+        MessageRetentionPeriod=(60 * 60 * 24 * 14),
+    )
+)
 
-# source_sns_subscription = Subscription(
-#     "SNSSourceSubscription",
-#     Endpoint=source_bucket,
-#     Protocol='sqs',
-# )
+spider_tasks_queue_name = f"{stage}-spider-tasks"
+spider_tasks_queue = template.add_resource(
+    Queue(
+        "SpiderTasksQueue",
+        QueueName=spider_tasks_queue_name,
+        MessageRetentionPeriod=(60 * 60 * 24 * 14),
+        VisibilityTimeout=300,
+        RedrivePolicy=RedrivePolicy(
+            deadLetterTargetArn=GetAtt(spider_tasks_queue_dlq, "Arn"),
+            maxReceiveCount=2,
+        ),
+        DependsOn=[spider_tasks_queue_dlq],
+    )
+)
 
 source_sns_name = f'{stage}-source-sns-topic'
 source_sns_topic = template.add_resource(Topic(
     "SNSSource",
     TopicName=source_sns_name,
-    # Subscription=[
-    #     Subscription(
-    #
-    #     )
-    # ],
+    Subscription=[
+        Subscription(
+            Endpoint=GetAtt(spider_tasks_queue, "Arn"),
+            Protocol='sqs',
+        )
+    ],
+    DependsOn=[spider_tasks_queue]
 ))
 
 source_sns_topic_policy = template.add_resource(
@@ -147,6 +167,29 @@ source_sns_topic_policy = template.add_resource(
     )
 )
 
+sns_sqs_policy = template.add_resource(
+    QueuePolicy(
+        "AllowSNSPutMessagesInSQS",
+        PolicyDocument=PolicyDocument(
+            Version="2012-10-17",
+            Id="AllowSNSPutMessagesInSQS",
+            Statement=[
+                Statement(
+                    Sid="AllowSNSPutMessagesInSQS2",
+                    Principal=Principal("*"),
+                    Effect=Allow,
+                    Action=[
+                        Action("sqs", "SendMessage"),
+                    ],
+                    Resource=["*"],
+                )
+            ]
+        ),
+        Queues=[Ref(spider_tasks_queue)],
+        DependsOn=[spider_tasks_queue],
+    )
+)
+
 # Buckets
 source_bucket_name = f'{stage}-source-bucket'
 source_bucket = template.add_resource(Bucket(
@@ -160,8 +203,7 @@ source_bucket = template.add_resource(Bucket(
             )
         ],
     ),
-    # DependsOn=[Ref(source_sns)]
-    DependsOn=[source_sns_topic_policy]
+    DependsOn=[source_sns_topic_policy],
 ))
 
 results_bucket_name = f'{stage}-results-bucket'
