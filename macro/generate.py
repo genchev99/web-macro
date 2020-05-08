@@ -5,24 +5,27 @@ from troposphere.awslambda import Function, Code, MEMORY_VALUES
 from troposphere.cloudformation import CustomResource
 from troposphere.ec2 import SecurityGroup
 from troposphere.iam import Role, Policy
+from troposphere.s3 import Bucket
 
+
+stage='pilot'
 template = Template()
 
 template.set_version("2010-09-09")
 
-ExistingVPC = template.add_parameter(Parameter(
-    "ExistingVPC",
-    Type="AWS::EC2::VPC::Id",
-    Description=(
-        "The VPC ID that includes the security groups in the"
-        "ExistingSecurityGroups parameter."
-    ),
-))
-
-ExistingSecurityGroups = template.add_parameter(Parameter(
-    "ExistingSecurityGroups",
-    Type="List<AWS::EC2::SecurityGroup::Id>",
-))
+# ExistingVPC = template.add_parameter(Parameter(
+#     "ExistingVPC",
+#     Type="AWS::EC2::VPC::Id",
+#     Description=(
+#         "The VPC ID that includes the security groups in the"
+#         "ExistingSecurityGroups parameter."
+#     ),
+# ))
+#
+# ExistingSecurityGroups = template.add_parameter(Parameter(
+#     "ExistingSecurityGroups",
+#     Type="List<AWS::EC2::SecurityGroup::Id>",
+# ))
 
 param_spider_lambda_memory_size = template.add_parameter(Parameter(
     'SpiderLambdaMemorySize',
@@ -48,7 +51,7 @@ spider_lambda = template.add_resource(Function(
     ),
     Handler="index.handler",
     Role=GetAtt("SpiderLambdaRole", "Arn"),
-    Runtime="nodejs",
+    Runtime="nodejs12.x",
     MemorySize=Ref(param_spider_lambda_memory_size),
     Timeout=Ref(param_spider_lambda_timeout)
 ))
@@ -78,29 +81,43 @@ spider_lambda_role = template.add_resource(Role(
     },
 ))
 
-AllSecurityGroups = template.add_resource(CustomResource(
-    "AllSecurityGroups",
-    List=Ref(ExistingSecurityGroups),
-    AppendedItem=Ref("SecurityGroup"),
-    ServiceToken=GetAtt(spider_lambda, "Arn"),
+# AllSecurityGroups = template.add_resource(CustomResource(
+#     "AllSecurityGroups",
+#     List=Ref(ExistingSecurityGroups),
+#     AppendedItem=Ref("SecurityGroup"),
+#     ServiceToken=GetAtt(spider_lambda, "Arn"),
+# ))
+#
+# SecurityGroup = template.add_resource(SecurityGroup(
+#     "SecurityGroup",
+#     SecurityGroupIngress=[
+#         {"ToPort": "80", "IpProtocol": "tcp", "CidrIp": "0.0.0.0/0",
+#          "FromPort": "80"}],
+#     VpcId=Ref(ExistingVPC),
+#     GroupDescription="Allow HTTP traffic to the host",
+#     SecurityGroupEgress=[
+#         {"ToPort": "80", "IpProtocol": "tcp", "CidrIp": "0.0.0.0/0",
+#          "FromPort": "80"}],
+# ))
+#
+# AllSecurityGroups = template.add_output(Output(
+#     "AllSecurityGroups",
+#     Description="Security Groups that are associated with the EC2 instance",
+#     Value=Join(", ", GetAtt(AllSecurityGroups, "Value")),
+# ))
+
+
+# Buckets
+source_bucket_name = f'{stage}-source-bucket'
+source_bucket = template.add_resource(Bucket(
+    "SourceBucket",
+    BucketName=source_bucket_name,
 ))
 
-SecurityGroup = template.add_resource(SecurityGroup(
-    "SecurityGroup",
-    SecurityGroupIngress=[
-        {"ToPort": "80", "IpProtocol": "tcp", "CidrIp": "0.0.0.0/0",
-         "FromPort": "80"}],
-    VpcId=Ref(ExistingVPC),
-    GroupDescription="Allow HTTP traffic to the host",
-    SecurityGroupEgress=[
-        {"ToPort": "80", "IpProtocol": "tcp", "CidrIp": "0.0.0.0/0",
-         "FromPort": "80"}],
-))
-
-AllSecurityGroups = template.add_output(Output(
-    "AllSecurityGroups",
-    Description="Security Groups that are associated with the EC2 instance",
-    Value=Join(", ", GetAtt(AllSecurityGroups, "Value")),
+results_bucket_name = f'{stage}-results-bucket'
+results_bucket = template.add_resource(Bucket(
+    "SourceBucket",
+    BucketName=results_bucket_name,
 ))
 
 print(template.to_json())
