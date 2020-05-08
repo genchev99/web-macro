@@ -2,6 +2,8 @@
 
 const chromium = require('chrome-aws-lambda');
 const puppeteer = require('puppeteer-core');
+const aws = require('aws-sdk');
+const s3 = new aws.S3({region: 'us-east-1'});
 
 const validateCommand = (commandArguments) => {
   const commandType = commandArguments.shift();
@@ -73,6 +75,14 @@ const href = async (page, commandArguments) =>
     && document.querySelector(selector).href.trim()
     , commandArguments[0]);
 
+const getS3Object = async (bucket, key) => {
+  const params = {
+    Bucket: bucket,
+    Key: key,
+  };
+
+  return await s3.getObject(params).promise();
+};
 
 exports.handler = async (event) => {
   // const executablePath = event.isOffline
@@ -87,6 +97,29 @@ exports.handler = async (event) => {
   // const page = await browser.newPage();
   //
 
-  console.log(event);
+  const {
+    Message: {
+      Records: [{
+        s3: {
+          object: {
+            key
+          } = {},
+          bucket: {
+            name
+          } = {},
+        } = {},
+      }] = [{}],
+    } = {},
+  } = event || {};
+
+  if (!name || !key) {
+    console.error('error: no key or bucket name found');
+    return;
+  }
+
+  const object = await getS3Object(name, key);
+  console.log({object});
+
+  console.log({event});
 };
 
