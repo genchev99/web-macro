@@ -1,3 +1,4 @@
+from awacs.aws import PolicyDocument, Statement, Principal, Allow, Action
 from troposphere.constants import NUMBER
 from troposphere import FindInMap, GetAtt, Join, Output
 from troposphere import Parameter, Ref, Template
@@ -5,10 +6,10 @@ from troposphere.awslambda import Function, Code, MEMORY_VALUES
 from troposphere.cloudformation import CustomResource
 from troposphere.ec2 import SecurityGroup
 from troposphere.iam import Role, Policy
-from troposphere.s3 import Bucket
+from troposphere.s3 import Bucket, NotificationConfiguration, TopicConfigurations
+from troposphere.sns import Topic, Subscription, TopicPolicy
 
-
-stage='pilot'
+stage = 'pilot'
 template = Template()
 
 template.set_version("2010-09-09")
@@ -107,16 +108,65 @@ spider_lambda_role = template.add_resource(Role(
 # ))
 
 
+# source_sns_subscription = Subscription(
+#     "SNSSourceSubscription",
+#     Endpoint=source_bucket,
+#     Protocol='sqs',
+# )
+
+source_sns_name = f'{stage}-source-sns-topic'
+source_sns_topic = template.add_resource(Topic(
+    "SNSSource",
+    TopicName=source_sns_name,
+    # Subscription=[
+    #     Subscription(
+    #
+    #     )
+    # ],
+))
+
+source_sns_topic_policy = template.add_resource(
+    TopicPolicy(
+        "SourceForwardingTopicPolicy",
+        PolicyDocument=PolicyDocument(
+            Version="2012-10-17",
+            Id="AllowS3PutMessageInSNS",
+            Statement=[
+                Statement(
+                    Sid="AllowS3PutMessages",
+                    Principal=Principal("Service", "s3.amazonaws.com"),
+                    Effect=Allow,
+                    Action=[
+                        Action("sns", "Publish"),
+                    ],
+                    Resource=["*"],
+                )
+            ]
+        ),
+        Topics=[Ref(source_sns_topic)],
+    )
+)
+
 # Buckets
 source_bucket_name = f'{stage}-source-bucket'
 source_bucket = template.add_resource(Bucket(
     "SourceBucket",
     BucketName=source_bucket_name,
+    NotificationConfiguration=NotificationConfiguration(
+        TopicConfigurations=[
+            TopicConfigurations(
+                Topic=Ref(source_sns_topic),
+                Event="s3:ObjectCreated:*",
+            )
+        ],
+    ),
+    # DependsOn=[Ref(source_sns)]
+    DependsOn=[source_sns_topic_policy]
 ))
 
 results_bucket_name = f'{stage}-results-bucket'
 results_bucket = template.add_resource(Bucket(
-    "SourceBucket",
+    "ResultsBucket",
     BucketName=results_bucket_name,
 ))
 
