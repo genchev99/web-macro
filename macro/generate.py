@@ -2,7 +2,7 @@ from awacs.aws import PolicyDocument, Statement, Principal, Allow, Action
 from troposphere.constants import NUMBER
 from troposphere import FindInMap, GetAtt, Join, Output
 from troposphere import Parameter, Ref, Template
-from troposphere.awslambda import Function, Code, MEMORY_VALUES
+from troposphere.awslambda import Function, Code, EventSourceMapping, MEMORY_VALUES
 from troposphere.cloudformation import CustomResource
 from troposphere.ec2 import SecurityGroup
 from troposphere.iam import Role, Policy
@@ -29,59 +29,115 @@ template.set_version("2010-09-09")
 #     Type="List<AWS::EC2::SecurityGroup::Id>",
 # ))
 
-param_spider_lambda_memory_size = template.add_parameter(Parameter(
-    'SpiderLambdaMemorySize',
-    Type=NUMBER,
-    Description='Amount of memory to allocate to the Lambda Function',
-    Default='128',
-    AllowedValues=MEMORY_VALUES
-))
+param_spider_lambda_memory_size = template.add_parameter(
+    Parameter(
+        'SpiderLambdaMemorySize',
+        Type=NUMBER,
+        Description='Amount of memory to allocate to the Lambda Function',
+        Default='128',
+        AllowedValues=MEMORY_VALUES
+    )
+)
 
-param_spider_lambda_timeout = template.add_parameter(Parameter(
-    'SpiderLambdaTimeout',
-    Type=NUMBER,
-    Description='Timeout in seconds for the Lambda function',
-    Default='60'
-))
+param_spider_lambda_timeout = template.add_parameter(
+    Parameter(
+        'SpiderLambdaTimeout',
+        Type=NUMBER,
+        Description='Timeout in seconds for the Lambda function',
+        Default='60'
+    )
+)
 
-spider_file_path = './spider/index.js'
-spider_code = open(spider_file_path, 'r').read().splitlines()
-spider_lambda = template.add_resource(Function(
-    "SpiderLambda",
-    Code=Code(
-        ZipFile=Join("", spider_code)
-    ),
-    Handler="index.handler",
-    Role=GetAtt("SpiderLambdaRole", "Arn"),
-    Runtime="nodejs12.x",
-    MemorySize=Ref(param_spider_lambda_memory_size),
-    Timeout=Ref(param_spider_lambda_timeout)
-))
+spider_tasks_queue_dlq_name = f'{stage}-spider-tasks-dlq'
+spider_tasks_queue_dlq = template.add_resource(
+    Queue(
+        "SpiderTasksDLQ",
+        QueueName=spider_tasks_queue_dlq_name,
+        MessageRetentionPeriod=(60 * 60 * 24 * 14),
+    )
+)
 
-spider_lambda_role = template.add_resource(Role(
-    "SpiderLambdaRole",
-    Path="/",
-    Policies=[Policy(
-        PolicyName="root",
-        PolicyDocument={
+spider_tasks_queue_name = f"{stage}-spider-tasks"
+spider_tasks_queue = template.add_resource(
+    Queue(
+        "SpiderTasksQueue",
+        QueueName=spider_tasks_queue_name,
+        MessageRetentionPeriod=(60 * 60 * 24 * 14),
+        VisibilityTimeout=300,
+        RedrivePolicy=RedrivePolicy(
+            deadLetterTargetArn=GetAtt(spider_tasks_queue_dlq, "Arn"),
+            maxReceiveCount=2,
+        ),
+        DependsOn=[spider_tasks_queue_dlq],
+    )
+)
+
+spider_lambda_role = template.add_resource(
+    Role(
+        "SpiderLambdaRole",
+        Path="/",
+        Policies=[
+            Policy(
+                PolicyName="root",
+                PolicyDocument=PolicyDocument(
+                    Version="2012-10-17",
+                    Id="root",
+                    Statement=[
+                        Statement(
+                            Effect=Allow,
+                            Resource=["*"],
+                            Action=[
+                                Action("logs", "*")
+                            ]
+                        ),
+                        Statement(
+                            Effect=Allow,
+                            Resource=["*"],
+                            Action=[
+                                Action("s3", "*")
+                            ]
+                        ),
+                        Statement(
+                            Effect=Allow,
+                            Resource=["*"],
+                            Action=[
+                                Action("sqs", "*")
+                            ]
+                        ),
+                    ]
+                ),
+            )
+        ],
+        AssumeRolePolicyDocument={
             "Version": "2012-10-17",
             "Statement": [{
-                "Action": ["logs:*"],
-                "Resource": "arn:aws:logs:*:*:*",
-                "Effect": "Allow"
+                "Action": ["sts:AssumeRole"],
+                "Effect": "Allow",
+                "Principal": {
+                    "Service": ["lambda.amazonaws.com"]
+                }
             }]
-        })],
-    AssumeRolePolicyDocument={
-        "Version": "2012-10-17",
-        "Statement": [{
-            "Action": ["sts:AssumeRole"],
-            "Effect": "Allow",
-            "Principal": {
-                "Service": ["lambda.amazonaws.com"]
-            }
-        }]
-    },
-))
+        },
+    )
+)
+
+spider_file_path = './spider/index.js'
+spider_code = open(spider_file_path, 'r').readlines()
+spider_lambda = template.add_resource(
+    Function(
+        "SpiderLambda",
+        Code=Code(
+            ZipFile=Join("", spider_code)
+        ),
+        Handler="index.handler",
+        Role=GetAtt(spider_lambda_role, "Arn"),
+        Runtime="nodejs12.x",
+        Layers=['arn:aws:lambda:us-east-1:342904801388:layer:spider-node:1'],
+        MemorySize=Ref(param_spider_lambda_memory_size),
+        Timeout=Ref(param_spider_lambda_timeout),
+        DependsOn=[spider_tasks_queue],
+    )
+)
 
 # AllSecurityGroups = template.add_resource(CustomResource(
 #     "AllSecurityGroups",
@@ -108,42 +164,21 @@ spider_lambda_role = template.add_resource(Role(
 #     Value=Join(", ", GetAtt(AllSecurityGroups, "Value")),
 # ))
 
-spider_tasks_queue_dlq_name = f'{stage}-spider-tasks-dlq'
-spider_tasks_queue_dlq = template.add_resource(
-    Queue(
-        "SpiderTasksDLQ",
-        QueueName=spider_tasks_queue_dlq_name,
-        MessageRetentionPeriod=(60 * 60 * 24 * 14),
-    )
-)
-
-spider_tasks_queue_name = f"{stage}-spider-tasks"
-spider_tasks_queue = template.add_resource(
-    Queue(
-        "SpiderTasksQueue",
-        QueueName=spider_tasks_queue_name,
-        MessageRetentionPeriod=(60 * 60 * 24 * 14),
-        VisibilityTimeout=300,
-        RedrivePolicy=RedrivePolicy(
-            deadLetterTargetArn=GetAtt(spider_tasks_queue_dlq, "Arn"),
-            maxReceiveCount=2,
-        ),
-        DependsOn=[spider_tasks_queue_dlq],
-    )
-)
 
 source_sns_name = f'{stage}-source-sns-topic'
-source_sns_topic = template.add_resource(Topic(
-    "SNSSource",
-    TopicName=source_sns_name,
-    Subscription=[
-        Subscription(
-            Endpoint=GetAtt(spider_tasks_queue, "Arn"),
-            Protocol='sqs',
-        )
-    ],
-    DependsOn=[spider_tasks_queue]
-))
+source_sns_topic = template.add_resource(
+    Topic(
+        "SNSSource",
+        TopicName=source_sns_name,
+        Subscription=[
+            Subscription(
+                Endpoint=GetAtt(spider_tasks_queue, "Arn"),
+                Protocol='sqs',
+            )
+        ],
+        DependsOn=[spider_tasks_queue]
+    )
+)
 
 source_sns_topic_policy = template.add_resource(
     TopicPolicy(
@@ -192,24 +227,38 @@ sns_sqs_policy = template.add_resource(
 
 # Buckets
 source_bucket_name = f'{stage}-source-bucket'
-source_bucket = template.add_resource(Bucket(
-    "SourceBucket",
-    BucketName=source_bucket_name,
-    NotificationConfiguration=NotificationConfiguration(
-        TopicConfigurations=[
-            TopicConfigurations(
-                Topic=Ref(source_sns_topic),
-                Event="s3:ObjectCreated:*",
-            )
-        ],
-    ),
-    DependsOn=[source_sns_topic_policy],
-))
+source_bucket = template.add_resource(
+    Bucket(
+        "SourceBucket",
+        BucketName=source_bucket_name,
+        NotificationConfiguration=NotificationConfiguration(
+            TopicConfigurations=[
+                TopicConfigurations(
+                    Topic=Ref(source_sns_topic),
+                    Event="s3:ObjectCreated:*",
+                )
+            ],
+        ),
+        DependsOn=[source_sns_topic_policy],
+    )
+)
 
 results_bucket_name = f'{stage}-results-bucket'
-results_bucket = template.add_resource(Bucket(
-    "ResultsBucket",
-    BucketName=results_bucket_name,
-))
+results_bucket = template.add_resource(
+    Bucket(
+        "ResultsBucket",
+        BucketName=results_bucket_name,
+    )
+)
+
+# Lambda trigger
+template.add_resource(
+    EventSourceMapping(
+        "TriggerLambdaSpiderFromSQS",
+        EventSourceArn=GetAtt(spider_tasks_queue, "Arn"),
+        FunctionName=Ref(spider_lambda),
+        BatchSize=1,  # Default process tasks one by one
+    )
+)
 
 print(template.to_json())

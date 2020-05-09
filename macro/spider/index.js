@@ -4,40 +4,7 @@ const chromium = require('chrome-aws-lambda');
 const puppeteer = require('puppeteer-core');
 const aws = require('aws-sdk');
 const s3 = new aws.S3({region: 'us-east-1'});
-
-const validateCommand = (commandArguments) => {
-  const commandType = commandArguments.shift();
-
-  return commandType === 'click' && commandArguments.length >= 1
-    || commandType === 'type' && commandArguments.length >= 2
-    || commandType === 'screenshot' && commandArguments.length >= 0
-    || commandType === 'goto' && commandArguments.length >= 1
-    || commandType === 'pdf' && commandArguments.length >= 0
-    || commandType === 'textContent' && commandArguments.length >= 1
-    || commandType === 'attribute' && commandArguments.length >= 1
-    || commandType === 'href' && commandArguments.length >= 1;
-};
-
-const parseCommand = async (page, command) => {
-  const parsedCommand = command.split(' ');
-
-  if (validateCommand(parsedCommand.slice())) {
-    const commandType = parsedCommand.shift();
-
-    await commands[commandType](page, parsedCommand);
-  }
-};
-
-const commands = {
-  click,
-  type,
-  screenshot,
-  goto,
-  pdf,
-  textContent,
-  attribute,
-  href,
-};
+const resultsS3BucketName = 'results-bucket';
 
 const click = async (page, commandArguments) =>
   await page.click(commandArguments[0]);
@@ -75,13 +42,67 @@ const href = async (page, commandArguments) =>
     && document.querySelector(selector).href.trim()
     , commandArguments[0]);
 
+const commands = {
+  click,
+  type,
+  screenshot,
+  goto,
+  pdf,
+  textContent,
+  attribute,
+  href,
+};
+
+const validateCommand = (commandArguments) => {
+  const commandType = commandArguments.shift();
+
+  return commandType === 'click' && commandArguments.length >= 1
+    || commandType === 'type' && commandArguments.length >= 2
+    || commandType === 'screenshot' && commandArguments.length >= 0
+    || commandType === 'goto' && commandArguments.length >= 1
+    || commandType === 'pdf' && commandArguments.length >= 0
+    || commandType === 'textContent' && commandArguments.length >= 1
+    || commandType === 'attribute' && commandArguments.length >= 1
+    || commandType === 'href' && commandArguments.length >= 1;
+};
+
+const parseCommand = async (page, command) => {
+  const parsedCommand = command.split(' ');
+
+  if (validateCommand(parsedCommand.slice())) {
+    const commandType = parsedCommand.shift();
+
+    await commands[commandType](page, parsedCommand);
+  }
+};
+
 const getS3Object = async (bucket, key) => {
+  if (!bucket || !key) {
+    throw 'Bucket or key not provided';
+  }
+
   const params = {
     Bucket: bucket,
     Key: key,
   };
 
-  return await s3.getObject(params).promise();
+  const {Body} = await s3.getObject(params).promise();
+
+  return JSON.parse(Body.toString());
+};
+
+const saveResultToS3 = async (bucket, key, object = {}) => {
+  if (!bucket || !key) {
+    throw 'Bucket or key not provided';
+  }
+
+  const params = {
+    Bucket: bucket,
+    Body: JSON.stringify(object),
+    Key: key,
+  };
+
+  await s3.putObject(params).promise();
 };
 
 exports.handler = async (event) => {
@@ -95,31 +116,16 @@ exports.handler = async (event) => {
   // });
   //
   // const page = await browser.newPage();
-  //
-
   const {
-    Message: {
-      Records: [{
-        s3: {
-          object: {
-            key
-          } = {},
-          bucket: {
-            name
-          } = {},
-        } = {},
-      }] = [{}],
-    } = {},
-  } = event || {};
+    Records
+  } = event|| {};
 
-  if (!name || !key) {
-    console.error('error: no key or bucket name found');
-    return;
-  }
+  const recs = Records
+    .map(record => JSON.parse(JSON.parse(record.body).Message).Records)
+    .flat()
+    .map(payload => ({bucketName: payload.s3.bucket.name, key: payload.s3.object.key}));
 
-  const object = await getS3Object(name, key);
-  console.log({object});
-
-  console.log({event});
+  const s3Objects = await Promise.all(recs.map(record => getS3Object(record.bucketName, record.key)));
+  await Promise.all(s3Objects.map(object => saveResultToS3('pilot-'+resultsS3BucketName, `${(new Date()).getTime()}.json`, object)))
 };
 
