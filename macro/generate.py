@@ -168,7 +168,6 @@ def generate(env='pilot'):
     #     Value=Join(", ", GetAtt(AllSecurityGroups, "Value")),
     # ))
 
-
     source_sns_name = f'{env}-source-sns-topic'
     source_sns_topic = template.add_resource(
         Topic(
