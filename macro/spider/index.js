@@ -6,20 +6,11 @@ const aws = require('aws-sdk');
 const s3 = new aws.S3({region: 'us-east-1'});
 const resultsS3BucketName = 'results-bucket';
 
-const click = async (page, commandArguments) =>
-  await page.click(commandArguments[0]);
-
-const type = async (page, commandArguments) =>
-  await page.type(commandArguments[0], commandArguments[1]);
-
-const screenshot = async (page, commandArguments) =>
-  await page.screenshot({fullPage: true, encode: 'base64'});
-
-const goto = async (page, commandArguments) =>
-  await page.goto(commandArguments[0]);
-
-const pdf = async (page, commandArguments) =>
-  await page.pdf();
+const click = async (page, commandArguments) => await page.click(commandArguments[0]);
+const type = async (page, commandArguments) => await page.type(commandArguments[0], commandArguments[1]);
+const screenshot = async (page) => await page.screenshot({fullPage: true, encoding: 'base64'});
+const goto = async (page, commandArguments) => await page.goto(commandArguments[0]);
+const pdf = async (page) => (await page.pdf()).toString();
 
 const textContent = async (page, commandArguments) =>
   await page.evaluate((selector) =>
@@ -55,7 +46,6 @@ const commands = {
 
 const validateCommand = (commandArguments) => {
   const commandType = commandArguments.shift();
-
   return commandType === 'click' && commandArguments.length >= 1
     || commandType === 'type' && commandArguments.length >= 2
     || commandType === 'screenshot' && commandArguments.length >= 0
@@ -67,18 +57,17 @@ const validateCommand = (commandArguments) => {
 };
 
 const parseCommand = async (page, command) => {
-  const parsedCommand = command.split(' ');
+  const split = command.split(' ');
 
-  if (validateCommand(parsedCommand.slice())) {
-    const commandType = parsedCommand.shift();
-
-    await commands[commandType](page, parsedCommand);
+  if (validateCommand(split.slice())) {
+    const t = split.shift();
+    return await commands[t](page, split);
   }
 };
 
 const getS3Object = async (bucket, key) => {
   if (!bucket || !key) {
-    throw 'Bucket or key not provided';
+    throw "Bucket or key not provided";
   }
 
   const params = {
@@ -93,7 +82,7 @@ const getS3Object = async (bucket, key) => {
 
 const saveResultToS3 = async (bucket, key, object = {}) => {
   if (!bucket || !key) {
-    throw 'Bucket or key not provided';
+    throw "Bucket or key not provided";
   }
 
   const params = {
@@ -106,19 +95,19 @@ const saveResultToS3 = async (bucket, key, object = {}) => {
 };
 
 exports.handler = async (event) => {
-  // const executablePath = event.isOffline
-  //   ? './node_modules/puppeteer/.local-chromium/mac-674921/chrome-mac/Chromium.app/Contents/MacOS/Chromium'
-  //   : await chromium.executablePath;
-  //
-  // const browser = await puppeteer.launch({
-  //   args: chromium.args,
-  //   executablePath
-  // });
-  //
-  // const page = await browser.newPage();
+  const executablePath = event.isOffline
+    ? './node_modules/puppeteer/.local-chromium/mac-674921/chrome-mac/Chromium.app/Contents/MacOS/Chromium'
+    : await chromium.executablePath;
+
+  const browser = await puppeteer.launch({
+    args: [...chromium.args, '--single-process'],
+    executablePath
+  });
+  const result = {};
+  const page = await browser.newPage();
   const {
     Records
-  } = event|| {};
+  } = event || {};
 
   const recs = Records
     .map(record => JSON.parse(JSON.parse(record.body).Message).Records)
@@ -126,6 +115,19 @@ exports.handler = async (event) => {
     .map(payload => ({bucketName: payload.s3.bucket.name, key: payload.s3.object.key}));
 
   const s3Objects = await Promise.all(recs.map(record => getS3Object(record.bucketName, record.key)));
-  await Promise.all(s3Objects.map(object => saveResultToS3('pilot-'+resultsS3BucketName, `${(new Date()).getTime()}.json`, object)))
+  const {commands} = s3Objects[0];
+
+  for (const command of commands) {
+    console.log('command: ', command);
+    if (command.indexOf('as') !== -1) {
+      const res_key = command.split('as').reverse()[0].trim();
+      result[res_key] = await parseCommand(page, command);
+    } else {
+      await parseCommand(page, command);
+    }
+  }
+
+  await Promise.all(s3Objects.map(object => saveResultToS3('pilot-' + resultsS3BucketName, `${(new Date()).getTime()}.json`, {result, object})))
+  await browser.close();
 };
 
