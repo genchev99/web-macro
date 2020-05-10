@@ -3,11 +3,11 @@ lambda:
 	aws s3 cp $(env).zip s3://spider-lambda/ --region us-east-1
 
 formation:
-	make clear
 	make lambda env=$(env)
 	python ./generate.py $(env) > cfn.json
 	aws s3 cp cfn.json s3://cloudformations-spider/$(env).json --region us-east-1
+	make clear
 
 clear:
-	rm *.zip
-	rm cfn.json
+	rm -f *.zip
+	rm -f cfn.json
