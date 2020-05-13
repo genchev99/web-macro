@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const aws = require('aws-sdk');
+
 const s3 = new aws.S3({
   accessKeyId: process.env.aws_access_key_id,
   secretAccessKey: process.env.aws_secret_access_key,
@@ -23,6 +24,16 @@ router.get('/', async (req, res) => {
   console.log(objects);
 
   res.json(objects);
+});
+
+router.get('/:key', async (req, res) => {
+  const params = {
+    Bucket: `${process.env.Environment}-results-bucket`,
+    Key: req.params.key
+  };
+
+  s3.getObject(params).createReadStream()
+    .pipe(res.set('Content-Type', 'application/json').set('Content-Disposition', 'inline; filename="results.json"'));
 });
 
 module.exports = router;

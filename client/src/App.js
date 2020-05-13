@@ -9,6 +9,7 @@ import {
 } from 'react-router-dom';
 import Nav from './nav';
 import Requests from './pages/Requests';
+import Results from './pages/Results';
 
 function App() {
   return (
@@ -16,7 +17,10 @@ function App() {
       <Switch>
         <Nav>
           <Route path="/requests">
-            <Requests/>
+            <Requests />
+          </Route>
+          <Route path="/results">
+            <Results />
           </Route>
         </Nav>
       </Switch>
