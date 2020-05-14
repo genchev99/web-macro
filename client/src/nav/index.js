@@ -142,7 +142,7 @@ export default function Nav(props) {
         <Divider />
         <List>{mainListItems}</List>
       </Drawer>
-      <main className={classes.content} >
+      <main className={classes.content} style={{marginTop: '50px'}}>
         {props.children}
       </main>
     </div>
