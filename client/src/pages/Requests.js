@@ -10,6 +10,7 @@ import StepLabel from '@material-ui/core/StepLabel';
 import Button from '@material-ui/core/Button';
 import Typography from '@material-ui/core/Typography';
 import RequestForm from './RequestForm';
+import axios from 'axios';
 
 const useStyles = makeStyles((theme) => ({
   appBar: {
@@ -50,22 +51,44 @@ const useStyles = makeStyles((theme) => ({
 
 const steps = ['Request Information'];
 
-function getStepContent(step) {
-  switch (step) {
-    case 0:
-      return <RequestForm />;
-    default:
-      throw new Error('Unknown step');
-  }
-}
+
 
 export default function Checkout() {
   const classes = useStyles();
   const [activeStep, setActiveStep] = React.useState(0);
+  /* Can be done with context */
+  const [firstName, setFirstName] = React.useState('');
+  const [lastName, setLastName] = React.useState('');
+  const [code, setCode] = React.useState('goto https://google.com');
 
   const handleNext = () => {
+    if (activeStep === steps.length - 1) {
+      console.log('HERE');
+      axios.post('./requests', {
+        firstName,
+        lastName,
+        code
+      });
+    }
+
     setActiveStep(activeStep + 1);
   };
+
+  function getStepContent(step) {
+    switch (step) {
+      case 0:
+        return <RequestForm
+          firstName={firstName}
+          setFirstName={setFirstName}
+          lastName={lastName}
+          setLastName={setLastName}
+          code={code}
+          setCode={setCode}
+        />;
+      default:
+        throw new Error('Unknown step');
+    }
+  }
 
   const handleBack = () => {
     setActiveStep(activeStep - 1);
@@ -91,9 +114,6 @@ export default function Checkout() {
               <React.Fragment>
                 <Typography variant="h5" gutterBottom>
                   Thank you for your request.
-                </Typography>
-                <Typography variant="subtitle1">
-                  Your request number is #2001539.
                 </Typography>
               </React.Fragment>
             ) : (

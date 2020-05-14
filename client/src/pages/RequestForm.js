@@ -6,7 +6,7 @@ import FormControlLabel from '@material-ui/core/FormControlLabel';
 import Checkbox from '@material-ui/core/Checkbox';
 import { TextareaAutosize } from '@material-ui/core';
 
-export default function RequestForm() {
+export default function RequestForm({firstName, setFirstName, lastName, setLastName, code, setCode}) {
   return (
     <React.Fragment>
       <Typography variant="h6" gutterBottom>
@@ -21,6 +21,8 @@ export default function RequestForm() {
             label="First name"
             fullWidth
             autoComplete="fname"
+            value={firstName}
+            onChange={e => setFirstName(e.target.value)}
           />
         </Grid>
         <Grid item xs={12} sm={6}>
@@ -31,13 +33,15 @@ export default function RequestForm() {
             label="Last name"
             fullWidth
             autoComplete="lname"
+            value={lastName}
+            onChange={e => setLastName(e.target.value)}
           />
         </Grid>
         <Grid item xs={12}>
           <TextareaAutosize
             aria-label="maximum height"
-            placeholder="Maximum 4 rows"
-            defaultValue="goto https://google.com"
+            value={code}
+            onChange={e => setCode(e.target.value)}
             style={{
               width: '100%',
               maxWidth: '100%',

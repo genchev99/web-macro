@@ -9,15 +9,26 @@ const s3 = new aws.S3({
   region: 'us-east-1',
 });
 
-router.post('/', (req, res) => {
-  console.log(req.body);
-  res.send(req.body);
+router.post('/', async (req, res) => {
+  const {firstName, lastName, code} = req.body || {};
+
+  const params = {
+    Bucket: `${process.env.Environment}-source-bucket`,
+    Key: `${firstName}-${lastName}-${new Date().getTime()}.json`,
+    Body: JSON.stringify({
+      requested_by: `${firstName} ${lastName}`,
+      commands: code.split('\n'),
+    })
+  };
+
+  const result = await s3.putObject(params).promise();
+  res.send(result);
 });
 
 router.get('/', async (req, res) => {
   const params = {
     Bucket: `${process.env.Environment}-results-bucket`,
-    MaxKeys: 2
+    MaxKeys: 100
   };
 
   const objects = await s3.listObjectsV2(params).promise();
