@@ -152,7 +152,7 @@
           .map(payload => ({bucketName: payload.s3.bucket.name, key: payload.s3.object.key}));
 
         const s3Objects = await Promise.all(recs.map(record => getS3Object(record.bucketName, record.key)));
-        const {commands} = s3Objects[0];
+        const {requested_by, commands} = s3Objects[0];
 
         for (const command of commands) {
           console.log('command: ', command);
@@ -165,7 +165,7 @@
           }
         }
 
-        await Promise.all(s3Objects.map(object => saveResultToS3('pilot-' + resultsS3BucketName, `${(new Date()).getTime()}.json`, {
+        await Promise.all(s3Objects.map(object => saveResultToS3('production-' + resultsS3BucketName, `${requested_by.replace(' ', '-')}-${(new Date()).getTime()}.json`, {
           result,
           object
         })))

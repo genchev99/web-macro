@@ -1,0 +1,300 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Parameters": {
+        "SpiderLambdaMemorySize": {
+            "AllowedValues": [
+                128,
+                192,
+                256,
+                320,
+                384,
+                448,
+                512,
+                576,
+                640,
+                704,
+                768,
+                832,
+                896,
+                960,
+                1024,
+                1088,
+                1152,
+                1216,
+                1280,
+                1344,
+                1408,
+                1472,
+                1536,
+                1600,
+                1664,
+                1728,
+                1792,
+                1856,
+                1920,
+                1984,
+                2048,
+                2112,
+                2176,
+                2240,
+                2304,
+                2368,
+                2432,
+                2496,
+                2560,
+                2624,
+                2688,
+                2752,
+                2816,
+                2880,
+                2944,
+                3008
+            ],
+            "Default": "128",
+            "Description": "Amount of memory to allocate to the Lambda Function",
+            "Type": "Number"
+        },
+        "SpiderLambdaTimeout": {
+            "Default": "60",
+            "Description": "Timeout in seconds for the Lambda function",
+            "Type": "Number"
+        }
+    },
+    "Resources": {
+        "AllowSNSPutMessagesInSQS": {
+            "DependsOn": [
+                "SpiderTasksQueue"
+            ],
+            "Properties": {
+                "PolicyDocument": {
+                    "Id": "AllowSNSPutMessagesInSQS",
+                    "Statement": [
+                        {
+                            "Action": [
+                                "sqs:SendMessage"
+                            ],
+                            "Effect": "Allow",
+                            "Principal": "*",
+                            "Resource": [
+                                "*"
+                            ],
+                            "Sid": "AllowSNSPutMessagesInSQS2"
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "Queues": [
+                    {
+                        "Ref": "SpiderTasksQueue"
+                    }
+                ]
+            },
+            "Type": "AWS::SQS::QueuePolicy"
+        },
+        "ResultsBucket": {
+            "Properties": {
+                "BucketName": "production-results-bucket"
+            },
+            "Type": "AWS::S3::Bucket"
+        },
+        "SNSSource": {
+            "DependsOn": [
+                "SpiderTasksQueue"
+            ],
+            "Properties": {
+                "Subscription": [
+                    {
+                        "Endpoint": {
+                            "Fn::GetAtt": [
+                                "SpiderTasksQueue",
+                                "Arn"
+                            ]
+                        },
+                        "Protocol": "sqs"
+                    }
+                ],
+                "TopicName": "production-source-sns-topic"
+            },
+            "Type": "AWS::SNS::Topic"
+        },
+        "SourceBucket": {
+            "DependsOn": [
+                "SourceForwardingTopicPolicy"
+            ],
+            "Properties": {
+                "BucketName": "production-source-bucket",
+                "NotificationConfiguration": {
+                    "TopicConfigurations": [
+                        {
+                            "Event": "s3:ObjectCreated:*",
+                            "Topic": {
+                                "Ref": "SNSSource"
+                            }
+                        }
+                    ]
+                }
+            },
+            "Type": "AWS::S3::Bucket"
+        },
+        "SourceForwardingTopicPolicy": {
+            "Properties": {
+                "PolicyDocument": {
+                    "Id": "AllowS3PutMessageInSNS",
+                    "Statement": [
+                        {
+                            "Action": [
+                                "sns:Publish"
+                            ],
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "s3.amazonaws.com"
+                            },
+                            "Resource": [
+                                "*"
+                            ],
+                            "Sid": "AllowS3PutMessages"
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "Topics": [
+                    {
+                        "Ref": "SNSSource"
+                    }
+                ]
+            },
+            "Type": "AWS::SNS::TopicPolicy"
+        },
+        "SpiderLambda": {
+            "DependsOn": [
+                "SpiderTasksQueue"
+            ],
+            "Properties": {
+                "Code": {
+                    "S3Bucket": "spider-lambda",
+                    "S3Key": "production.zip"
+                },
+                "Handler": "index.handler",
+                "Layers": [
+                    "arn:aws:lambda:us-east-1:342904801388:layer:spider-node-browser:1"
+                ],
+                "MemorySize": {
+                    "Ref": "SpiderLambdaMemorySize"
+                },
+                "Role": {
+                    "Fn::GetAtt": [
+                        "SpiderLambdaRole",
+                        "Arn"
+                    ]
+                },
+                "Runtime": "nodejs12.x",
+                "Timeout": {
+                    "Ref": "SpiderLambdaTimeout"
+                }
+            },
+            "Type": "AWS::Lambda::Function"
+        },
+        "SpiderLambdaRole": {
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": [
+                                "sts:AssumeRole"
+                            ],
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com"
+                                ]
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyDocument": {
+                            "Id": "root",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "logs:*"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": [
+                                        "*"
+                                    ]
+                                },
+                                {
+                                    "Action": [
+                                        "s3:*"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": [
+                                        "*"
+                                    ]
+                                },
+                                {
+                                    "Action": [
+                                        "sqs:*"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": [
+                                        "*"
+                                    ]
+                                }
+                            ],
+                            "Version": "2012-10-17"
+                        },
+                        "PolicyName": "root"
+                    }
+                ]
+            },
+            "Type": "AWS::IAM::Role"
+        },
+        "SpiderTasksDLQ": {
+            "Properties": {
+                "MessageRetentionPeriod": 1209600,
+                "QueueName": "production-spider-tasks-dlq"
+            },
+            "Type": "AWS::SQS::Queue"
+        },
+        "SpiderTasksQueue": {
+            "DependsOn": [
+                "SpiderTasksDLQ"
+            ],
+            "Properties": {
+                "MessageRetentionPeriod": 1209600,
+                "QueueName": "production-spider-tasks",
+                "RedrivePolicy": {
+                    "deadLetterTargetArn": {
+                        "Fn::GetAtt": [
+                            "SpiderTasksDLQ",
+                            "Arn"
+                        ]
+                    },
+                    "maxReceiveCount": 2
+                },
+                "VisibilityTimeout": 300
+            },
+            "Type": "AWS::SQS::Queue"
+        },
+        "TriggerLambdaSpiderFromSQS": {
+            "Properties": {
+                "BatchSize": 1,
+                "EventSourceArn": {
+                    "Fn::GetAtt": [
+                        "SpiderTasksQueue",
+                        "Arn"
+                    ]
+                },
+                "FunctionName": {
+                    "Ref": "SpiderLambda"
+                }
+            },
+            "Type": "AWS::Lambda::EventSourceMapping"
+        }
+    }
+}

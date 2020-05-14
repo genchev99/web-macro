@@ -10,4 +10,3 @@ formation:
 
 clear:
 	rm -f *.zip
-	rm -f cfn.json
