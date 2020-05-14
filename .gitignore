@@ -1,4 +1,3 @@
-
 # Created by https://www.gitignore.io/api/node,python,pycharm,intellij,pycharm+iml,pycharm+all,intellij+all,intellij+iml
 # Edit at https://www.gitignore.io/?templates=node,python,pycharm,intellij,pycharm+iml,pycharm+all,intellij+all,intellij+iml
 
@@ -558,3 +557,4 @@ dmypy.json
 .pyre/
 
 # End of https://www.gitignore.io/api/node,python,pycharm,intellij,pycharm+iml,pycharm+all,intellij+all,intellij+iml
+venv/
